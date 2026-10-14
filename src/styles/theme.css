@@ -1,0 +1,44 @@
+/* Access Vault brand. Change the three brand colours HERE and everything else follows. */
+:root {
+  /* ---- brand ---- */
+  --primary: #1D68FF;
+  --secondary: #14181C;
+  --tertiary: #F9F8F9;
+
+  /* ---- surfaces (derived from secondary + tertiary) ---- */
+  --bg: var(--secondary);
+  --bg-elevated: color-mix(in srgb, var(--secondary), var(--tertiary) 5%);
+  --bg-input: color-mix(in srgb, var(--secondary), var(--tertiary) 3%);
+  --border: color-mix(in srgb, var(--secondary), var(--tertiary) 16%);
+  --border-strong: color-mix(in srgb, var(--secondary), var(--tertiary) 28%);
+
+  /* ---- text ---- */
+  --text: var(--tertiary);
+  --text-muted: color-mix(in srgb, var(--tertiary) 62%, var(--secondary));
+
+  /* ---- accent (primary) ----
+     Primary on the dark background is ~3.8:1, fine for buttons, borders and large shapes but
+     below 4.5:1 for small text, so links and small accent text use a lighter tint. */
+  --accent: var(--primary);
+  --accent-hover: color-mix(in srgb, var(--primary) 85%, black);
+  --accent-text: color-mix(in srgb, var(--primary) 60%, white);
+  --accent-contrast: var(--tertiary); /* text on a primary button */
+  --accent-glow: color-mix(in srgb, var(--primary) 22%, transparent);
+  --accent-ring: color-mix(in srgb, var(--primary) 35%, transparent);
+
+  /* ---- status ---- */
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.1);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.1);
+  --success: #4ade80;
+  --success-bg: rgba(74, 222, 128, 0.1);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.1);
+
+  /* ---- shape & type ---- */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font: 'Montserrat', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
