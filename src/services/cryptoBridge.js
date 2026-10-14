@@ -29,13 +29,14 @@ export async function prepareRegistration(password, email) {
 }
 
 /**
- * @returns { authSecret } for POST /auth/login.
+ * @param params { kdfSalt, kdfIterations } from authApi.getAuthParams(email), fetched BEFORE this call.
+ * @returns { authSecret } for the login request.
  *
- * OPEN QUESTION FOR THE TEAM (raise before Phase 2): in the real scheme
- * authSecret = HKDF(PBKDF2(password, kdfSalt)), but the salt is only returned BY
- * login, after the authSecret has been sent. The browser needs the salt first.
- * See docs/OPEN_QUESTIONS.md.
+ * Real scheme: authSecret = HKDF(PBKDF2(password, params.kdfSalt, params.kdfIterations)).
+ * The mock ignores params. When Nathan's module lands, use them here (and only here).
  */
-export async function prepareLogin(password, email) {
+export async function prepareLogin(password, email, params = null) {
+  // TODO(Phase 2): derive with params.kdfSalt / params.kdfIterations using Nathan's module.
+  void params;
   return { authSecret: await deriveMockAuthSecret(password, email) };
 }

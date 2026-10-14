@@ -52,6 +52,19 @@ function newSessionToken() {
 
 const normalise = (email) => email.trim().toLowerCase();
 
+/** Mirrors supabaseAuthApi.getAuthParams: the salt the browser needs before it can build authSecret. */
+export async function getAuthParams(email) {
+  await seedDemoUser();
+  await sleep(latencyMs);
+  const record = users.get(normalise(email));
+  // Unknown emails get a fake salt too, like the real endpoint, so existence is not revealed.
+  return { kdfSalt: record?.kdfSalt ?? randomBase64(16), kdfIterations: 600000 };
+}
+
+export async function logout() {
+  /* nothing to end in the mock */
+}
+
 export async function register(payload) {
   await seedDemoUser();
   await sleep(latencyMs);
@@ -100,5 +113,6 @@ export async function login(payload) {
     sessionToken: newSessionToken(),
     kdfSalt: record.kdfSalt,
     wrappedPrivateKey: record.wrappedPrivateKey,
+    displayName: record.displayName,
   };
 }

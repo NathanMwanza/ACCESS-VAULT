@@ -56,6 +56,14 @@ describe('mock auth API matches the API Agreements sheet', () => {
     await expect(authApi.register(body)).rejects.toMatchObject({ code: 'invalid_request' });
   });
 
+  it('getAuthParams returns a salt for known and unknown emails alike', async () => {
+    const known = await authApi.getAuthParams(DEMO_USER.email);
+    const ghost = await authApi.getAuthParams('ghost@nowhere.co');
+    expect(typeof known.kdfSalt).toBe('string');
+    expect(typeof ghost.kdfSalt).toBe('string');
+    expect(Number.isInteger(known.kdfIterations)).toBe(true);
+  });
+
   it('never sends the password anywhere in the payload', async () => {
     const body = await registerBody('pw@x.co', 'super-secret-password-xyz');
     expect(JSON.stringify(body)).not.toContain('super-secret-password-xyz');
