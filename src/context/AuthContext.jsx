@@ -35,8 +35,11 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async ({ email, password }) => {
     const cleanEmail = email.trim();
-    const { authSecret } = await prepareLogin(password, cleanEmail);
-    const { userId, sessionToken, kdfSalt, wrappedPrivateKey } = await authApi.login({
+    // Step 1: get the salt (the server answers for unknown emails too, with a fake one).
+    const params = await authApi.getAuthParams(cleanEmail);
+    // Step 2: derive authSecret in the browser. The password itself is never sent.
+    const { authSecret } = await prepareLogin(password, cleanEmail, params);
+    const { userId, sessionToken, kdfSalt, wrappedPrivateKey, displayName } = await authApi.login({
       email: cleanEmail,
       authSecret,
     });
@@ -45,13 +48,14 @@ export function AuthProvider({ children }) {
       userId,
       sessionToken,
       email: cleanEmail,
-      displayName: null, // login response carries no name (per the contract)
+      displayName: displayName ?? null, // optional extra field; the mock and old contract omit it
       kdfSalt,
       wrappedPrivateKey,
     });
   }, []);
 
   const logout = useCallback(() => {
+    authApi.logout().catch(() => {}); // end the backend session too; never block the UI on it
     setSession(null);
     setNotice('signed_out');
   }, []);

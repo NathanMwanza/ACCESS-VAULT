@@ -8,23 +8,26 @@ React + Vite single-page app. Phase 1 scope: scaffold, Register and Login screen
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 21 tests (validation, mock-vs-contract, full UI flows)
+npm test         # tests (validation, mock-vs-contract, full UI flows)
 npm run build
 ```
 
 Demo account in mock mode: `demo@accessvault.test` / `correct horse battery staple`
 (or just register a new one; mock users live in memory until you refresh).
 
-## Swapping the mock for Prince's real endpoints (Phase 2)
+## Using the real Supabase backend
 
-Copy `.env.example` to `.env.local` and set:
+Full steps are in [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md). In short: run
+`supabase/migrations/001_auth_integration.sql` once, then in `.env.local` set
 
 ```
 VITE_USE_MOCK=false
-VITE_API_URL=<Prince's base URL>
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<publishable key>
 ```
 
-That is the whole switch. `src/services/authApi.js` picks mock or real; no page changes.
+and restart `npm run dev`. `src/services/authApi.js` picks mock or Supabase; no page changes.
+The tests always use the mock (plus a fake Supabase client for `supabaseAuthApi`).
 
 ## Folder map
 
@@ -36,14 +39,16 @@ src/
   context/         AuthContext: session held in memory only (no localStorage/cookies)
   services/
     contract.js      The API Agreements sheet as code: error codes, shape + size checks
-    apiClient.js     fetch wrapper that normalises errors to { code, message }
-    authApi.js       mock <-> real switch
-    realAuthApi.js   Prince's endpoints (Phase 2)
+    apiClient.js     ApiError class (the old fetch wrapper is unused now that the backend is Supabase)
+    authApi.js       mock <-> Supabase switch
+    supabaseClient.js     shared Supabase client (memory-only session, lazy)
+    supabaseAuthApi.js    register / login / getAuthParams / logout against Supabase
+    supabaseFoldersApi.js folder calls for the temporary Backend check panel
     mock/            Mock API + fake crypto (shape-correct, NOT secure)
     cryptoBridge.js  The only file the UI uses for crypto; swap in Nathan's setupAccount() here
   utils/           validation, password strength, base64
   styles/          theme.css (brand colours + derived tokens, change the look here) + global.css
-supabase/          Prince's area
+supabase/          Prince's area: migrations/, schema_reference.sql, policies.sql
 tests/             Vitest + Testing Library
 docs/              Handoff overview for Nokuthula, open questions, Chapter 5 notes
 ```

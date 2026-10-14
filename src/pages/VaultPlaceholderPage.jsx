@@ -3,6 +3,7 @@ import { USING_MOCK } from '../services/authApi.js';
 import Logo from '../components/Logo.jsx';
 import Alert from '../components/Alert.jsx';
 import Button from '../components/Button.jsx';
+import BackendCheck from '../components/BackendCheck.jsx';
 
 /** Stand-in for the file explorer (Phase 3). Proves the login worked and the session is held. */
 export default function VaultPlaceholderPage() {
@@ -24,10 +25,12 @@ export default function VaultPlaceholderPage() {
         )}
         {USING_MOCK && (
           <Alert variant="info" title="Mock mode">
-            You are signed in against the built-in mock, not the real backend. This will switch to
-            the real endpoints in Phase 2.
+            You are signed in against the built-in mock, not the real backend. Set
+            VITE_USE_MOCK=false in .env.local to use Supabase.
           </Alert>
         )}
+
+        {!USING_MOCK && <BackendCheck />}
 
         <section className="vault__empty">
           <Logo size="lg" showName={false} />

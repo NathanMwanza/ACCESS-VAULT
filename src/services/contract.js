@@ -9,6 +9,7 @@ import { base64ByteLength, isBase64 } from '../utils/base64.js';
 export const ERROR_CODES = {
   INVALID_CREDENTIALS: 'invalid_credentials',
   EMAIL_TAKEN: 'email_taken',
+  EMAIL_NOT_CONFIRMED: 'email_not_confirmed', // Supabase email confirmation is on (add to the agreements sheet)
   INVALID_REQUEST: 'invalid_request',
   NETWORK_ERROR: 'network_error', // frontend-only: request never reached the server
   UNKNOWN: 'unknown_error', // frontend-only: server replied in an unexpected shape
