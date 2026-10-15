@@ -2,7 +2,7 @@
 // Exercises setupAccount, login round-trip, chunk encrypt/decrypt (incl. tamper
 // detection), and the full share/unwrap flow between two "users".
 
-import { setupAccount, deriveKeys, unwrapPrivateKey, wrapToUser, unwrapFromUser } from "./keyManager.js";
+import { setupAccount, deriveKeys, unwrapPrivateKey, wrapToUser, unwrapFromUser, wrapKey, unwrapKey } from "./keyManager.js";
 import { generateAesKey, encryptChunk, decryptChunk } from "./cryptoEngine.js";
 import { base64ToBuf } from "./encoding.js";
 
@@ -94,6 +94,21 @@ async function main() {
   const sharedCipher = await encryptChunk(ownerFolderKey, baseNonce, "shared-file", 0, true, sharedPlaintext);
   const sharedDecrypted = await decryptChunk(recoveredFolderKey, baseNonce, "shared-file", 0, true, sharedCipher);
   check("recipient's unwrapped key decrypts owner-encrypted content", Buffer.from(sharedDecrypted).equals(Buffer.from(sharedPlaintext)));
+
+
+  console.log("\n8. File key wrapped under a folder key (used by every upload)");
+  const folderKey2 = await generateAesKey();
+  const fileKey2 = await generateAesKey();
+  const { iv: wIv, wrapped: wBytes } = await wrapKey(fileKey2, folderKey2);
+  const fileKeyBack = await unwrapKey(wBytes, wIv, folderKey2, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+  const probe = new TextEncoder().encode("probe");
+  const probeCt = await encryptChunk(fileKey2, baseNonce, "f-wrap", 0, true, probe);
+  const probePt = await decryptChunk(fileKeyBack, baseNonce, "f-wrap", 0, true, probeCt);
+  check("unwrapped file key decrypts data encrypted with the original", Buffer.from(probePt).equals(Buffer.from(probe)));
+  let wrongFolderRejected = false;
+  try { await unwrapKey(wBytes, wIv, await generateAesKey(), { name: "AES-GCM" }, true, ["encrypt", "decrypt"]); }
+  catch { wrongFolderRejected = true; }
+  check("unwrapping with the wrong folder key is rejected", wrongFolderRejected);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
