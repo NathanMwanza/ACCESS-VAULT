@@ -77,22 +77,23 @@ export async function generateUserKeyPair() {
  * and both are safe to store/transmit since the plaintext key never appears.
  */
 export async function wrapKey(keyToWrap, wrappingKey) {
+  // Export + AES-GCM encrypt (instead of subtle.wrapKey) so the wrapping key only needs
+  // the normal "encrypt"/"decrypt" usages that generateAesKey() gives every key.
+  const raw = await crypto.subtle.exportKey("raw", keyToWrap);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const wrapped = await crypto.subtle.wrapKey("raw", keyToWrap, wrappingKey, { name: "AES-GCM", iv });
+  const wrapped = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, wrappingKey, raw);
   return { iv, wrapped };
 }
 
 /** Unwrap a previously wrapped CryptoKey. `format`/`algorithm` must match how it was wrapped. */
 export async function unwrapKey(wrappedBytes, iv, wrappingKey, unwrappedAlgorithm, extractable, usages) {
-  return crypto.subtle.unwrapKey(
-    "raw",
-    wrappedBytes,
-    wrappingKey,
-    { name: "AES-GCM", iv },
-    unwrappedAlgorithm,
-    extractable,
-    usages
-  );
+  let raw;
+  try {
+    raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, wrappingKey, wrappedBytes);
+  } catch {
+    throw new Error("Could not unwrap key (wrong wrapping key or corrupted data).");
+  }
+  return crypto.subtle.importKey("raw", raw, unwrappedAlgorithm, extractable, usages);
 }
 
 /**
