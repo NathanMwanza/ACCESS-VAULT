@@ -58,8 +58,8 @@ async function hkdfSplit(masterSecretBytes, infoLabel) {
  * registering fresh.
  * @returns {Promise<{authSecret: ArrayBuffer, kek: CryptoKey}>}
  */
-export async function deriveKeys(password, saltBytes) {
-  const master = await deriveMasterSecret(password, saltBytes);
+export async function deriveKeys(password, saltBytes, iterations = KDF_ITERATIONS) {
+  const master = await deriveMasterSecret(password, saltBytes, iterations);
   const authSecretBits = await hkdfSplit(master, "av-auth");
   const kekBits = await hkdfSplit(master, "av-kek");
   const kek = await crypto.subtle.importKey("raw", kekBits, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);

@@ -1,3 +1,14 @@
+import { createFolder, createGrant, getVault } from '../services/supabaseAuthApi.js';
+import { initAuthFlow } from '../services/authFlow.js';
+
+// Initialize authFlow with backend methods
+const auth = initAuthFlow({
+  createFolder,
+  createGrant,
+  getVault
+});
+
+
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { authApi } from '../services/authApi.js';
 import { prepareLogin, prepareRegistration } from '../services/cryptoBridge.js';
@@ -16,53 +27,44 @@ export function AuthProvider({ children }) {
   const register = useCallback(async ({ displayName, email, password }) => {
     const cleanEmail = email.trim();
     const cleanName = displayName.trim();
-    const cryptoFields = await prepareRegistration(password, cleanEmail);
-    const { userId, sessionToken } = await authApi.register({
-      email: cleanEmail,
-      displayName: cleanName,
-      ...cryptoFields,
-    });
+
+    // Replaces prepareRegistration + authApi.register with client-side zero-trust authFlow
+    const sessionData = await auth.register(cleanEmail, password, { displayName: cleanName });
+
     setNotice(null);
     setSession({
-      userId,
-      sessionToken,
+      ...sessionData,
       email: cleanEmail,
       displayName: cleanName,
       justRegistered: true,
-      // Key material for the later phases is held here once Nathan's module returns it.
     });
+    return sessionData;
   }, []);
 
   const login = useCallback(async ({ email, password }) => {
     const cleanEmail = email.trim();
-    // Step 1: get the salt (the server answers for unknown emails too, with a fake one).
-    const params = await authApi.getAuthParams(cleanEmail);
-    // Step 2: derive authSecret in the browser. The password itself is never sent.
-    const { authSecret } = await prepareLogin(password, cleanEmail, params);
-    const { userId, sessionToken, kdfSalt, wrappedPrivateKey, displayName } = await authApi.login({
-      email: cleanEmail,
-      authSecret,
-    });
+
+    // Replaces getAuthParams + prepareLogin + authApi.login with authFlow
+    const sessionData = await auth.login(cleanEmail, password);
+
     setNotice(null);
     setSession({
-      userId,
-      sessionToken,
+      ...sessionData,
       email: cleanEmail,
-      displayName: displayName ?? null, // optional extra field; the mock and old contract omit it
-      kdfSalt,
-      wrappedPrivateKey,
     });
+    return sessionData;
   }, []);
 
-  const logout = useCallback(() => {
-    authApi.logout().catch(() => {}); // end the backend session too; never block the UI on it
+  const logout = useCallback(async () => {
+    // End session using authFlow and clear local state
+    await auth.logout().catch(() => {});
     setSession(null);
     setNotice('signed_out');
   }, []);
 
   const value = useMemo(
-    () => ({ session, notice, isAuthenticated: session !== null, register, login, logout }),
-    [session, notice, register, login, logout],
+      () => ({ session, notice, isAuthenticated: session !== null, register, login, logout }),
+      [session, notice, register, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
