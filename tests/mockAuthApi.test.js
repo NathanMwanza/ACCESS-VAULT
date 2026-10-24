@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { authApi } from '../src/services/authApi.js';
 import { __resetMockAuth, __setMockLatency, DEMO_USER } from '../src/services/mock/mockAuthApi.js';
 import { prepareLogin, prepareRegistration } from '../src/services/cryptoBridge.js';
@@ -9,9 +9,16 @@ beforeEach(() => {
   __setMockLatency(0);
 });
 
-async function registerBody(email, password = 'a-long-test-password') {
-  return { email, displayName: 'Test User', ...(await prepareRegistration(password, email)) };
+// Same two steps the real login makes: fetch the salt first, then derive authSecret from it.
+async function loginSecret(email, password) {
+  return prepareLogin(password, await authApi.getAuthParams(email));
 }
+
+async function registerBody(email, password = 'a-long-test-password') {
+  return { email, displayName: 'Test User', ...(await prepareRegistration(password)) };
+}
+
+vi.setConfig({ testTimeout: 30000 }); // real PBKDF2 (600k iterations) per derive
 
 describe('mock auth API matches the API Agreements sheet', () => {
   it('registration payload built by the UI satisfies the contract', async () => {
@@ -25,7 +32,7 @@ describe('mock auth API matches the API Agreements sheet', () => {
   });
 
   it('login returns { userId, sessionToken, kdfSalt, wrappedPrivateKey }', async () => {
-    const { authSecret } = await prepareLogin(DEMO_USER.password, DEMO_USER.email);
+    const { authSecret } = await loginSecret(DEMO_USER.email, DEMO_USER.password);
     const res = await authApi.login({ email: DEMO_USER.email, authSecret });
     expect(isLoginResponse(res)).toBe(true);
   });
@@ -33,15 +40,15 @@ describe('mock auth API matches the API Agreements sheet', () => {
   it('register -> login round trip works with the same password', async () => {
     const email = 'round@trip.co';
     const reg = await authApi.register(await registerBody(email, 'my-long-password-1'));
-    const { authSecret } = await prepareLogin('my-long-password-1', email);
+    const { authSecret } = await loginSecret(email, 'my-long-password-1');
     const res = await authApi.login({ email, authSecret });
     expect(res.userId).toBe(reg.userId);
   });
 
   it('wrong password and unknown user give the same invalid_credentials error', async () => {
-    const bad = await prepareLogin('wrong', DEMO_USER.email);
+    const bad = await loginSecret(DEMO_USER.email, 'wrong');
     await expect(authApi.login({ email: DEMO_USER.email, authSecret: bad.authSecret })).rejects.toMatchObject({ code: 'invalid_credentials' });
-    const ghost = await prepareLogin('whatever', 'ghost@nowhere.co');
+    const ghost = await loginSecret('ghost@nowhere.co', 'whatever');
     await expect(authApi.login({ email: 'ghost@nowhere.co', authSecret: ghost.authSecret })).rejects.toMatchObject({ code: 'invalid_credentials' });
   });
 

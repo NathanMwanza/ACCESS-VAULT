@@ -26,26 +26,29 @@ VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<publishable key>
 ```
 
-and restart `npm run dev`. `src/services/authApi.js` picks mock or Supabase; no page changes.
+and restart `npm run dev`. `src/services/authApi.js` picks mock or Supabase; no page changes. Also run
+`supabase/migrations/002_vault_folders_and_grants.sql` (encrypted folders + key grants) after 001.
 The tests always use the mock (plus a fake Supabase client for `supabaseAuthApi`).
 
 ## Folder map
 
 ```
 src/
-  crypto/          Nathan's module lands here (UI never imports it directly)
+  crypto/          Nathan's module: key derivation, wrapping, AES-GCM (UI never imports it directly)
   components/      Reusable UI: TextField, PasswordField, Button, Alert, AuthLayout, ...
   pages/           LoginPage, RegisterPage, VaultPlaceholderPage (file explorer comes in Phase 3)
   context/         AuthContext: session held in memory only (no localStorage/cookies)
   services/
     contract.js      The API Agreements sheet as code: error codes, shape + size checks
     apiClient.js     ApiError class (the old fetch wrapper is unused now that the backend is Supabase)
-    authApi.js       mock <-> Supabase switch
+    authFlow.js      the zero-trust flow: register/login derive keys in the browser, wrap/unwrap them, create the vault folder
+    authApi.js       mock <-> Supabase switch (the `backend` that authFlow.js calls)
+    supabaseVaultApi.js   createFolder / createGrant / getVault (ciphertext only)
     supabaseClient.js     shared Supabase client (memory-only session, lazy)
     supabaseAuthApi.js    register / login / getAuthParams / logout against Supabase
     supabaseFoldersApi.js folder calls for the temporary Backend check panel
-    mock/            Mock API + fake crypto (shape-correct, NOT secure)
-    cryptoBridge.js  The only file the UI uses for crypto; swap in Nathan's setupAccount() here
+    mock/            Mock API: behaves like the server (stores what the browser sends, checks authSecret, holds vault folders)
+    cryptoBridge.js  Request-shaped crypto values for tests/tools (the app itself goes through authFlow.js)
   utils/           validation, password strength, base64
   styles/          theme.css (brand colours + derived tokens, change the look here) + global.css
 supabase/          Prince's area: migrations/, schema_reference.sql, policies.sql

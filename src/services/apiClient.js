@@ -1,6 +1,6 @@
 import { ERROR_CODES } from './contract.js';
 
-const BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+const BASE_URL = (import.meta.env?.VITE_API_URL ?? '').replace(/\/$/, '');
 
 /** Every failure the UI sees is one of these: { code, message, status }. */
 export class ApiError extends Error {
