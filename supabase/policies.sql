@@ -19,14 +19,25 @@ CREATE POLICY "Owners can view own folders"
 ON public.folders FOR SELECT
 USING (auth.uid() = owner_id);
 
+-- Insert/update also require parent_id to be null or one of the user's own folders (migration 003).
 CREATE POLICY "Owners can insert folders"
 ON public.folders FOR INSERT
-WITH CHECK (auth.uid() = owner_id);
+WITH CHECK (
+  auth.uid() = owner_id
+  AND (parent_id IS NULL OR EXISTS (
+    SELECT 1 FROM public.folders p WHERE p.folder_id = folders.parent_id AND p.owner_id = auth.uid()
+  ))
+);
 
 CREATE POLICY "Owners can update own folders"
 ON public.folders FOR UPDATE
 USING (auth.uid() = owner_id)
-WITH CHECK (auth.uid() = owner_id);
+WITH CHECK (
+  auth.uid() = owner_id
+  AND (parent_id IS NULL OR EXISTS (
+    SELECT 1 FROM public.folders p WHERE p.folder_id = folders.parent_id AND p.owner_id = auth.uid()
+  ))
+);
 
 CREATE POLICY "Owners can delete own folders"
 ON public.folders FOR DELETE

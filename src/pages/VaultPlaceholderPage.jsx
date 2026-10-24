@@ -1,5 +1,6 @@
 import { useAuth } from '../context/AuthContext.jsx';
 import { USING_MOCK } from '../services/authApi.js';
+import FolderExplorer from '../components/explorer/FolderExplorer.jsx';
 import Logo from '../components/Logo.jsx';
 import Alert from '../components/Alert.jsx';
 import Button from '../components/Button.jsx';
@@ -29,12 +30,7 @@ export default function VaultPlaceholderPage() {
           </Alert>
         )}
 
-
-        <section className="vault__empty">
-          <Logo size="lg" showName={false} />
-          <h1>Your vault is locked and empty</h1>
-          <p>The file explorer arrives in Phase 3: upload, download and the lock indicators.</p>
-        </section>
+        <FolderExplorer />
       </main>
     </div>
   );

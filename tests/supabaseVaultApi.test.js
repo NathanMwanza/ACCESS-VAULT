@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fake = { auth: {}, from: vi.fn() };
 vi.mock('../src/services/supabaseClient.js', () => ({ getSupabase: () => fake }));
 
-const { createFolder, createGrant, getVault } = await import('../src/services/supabaseVaultApi.js');
+const { createFolder, createGrant, getVault, listFolders } = await import('../src/services/supabaseVaultApi.js');
 
 const ME = '11111111-1111-1111-1111-111111111111';
 
@@ -84,5 +84,21 @@ describe('getVault', () => {
     const envelopes = query({ data: [], error: null });
     fake.from.mockImplementation((table) => (table === 'folders' ? folders : envelopes));
     expect(await getVault()).toBeNull();
+  });
+});
+
+describe('listFolders', () => {
+  it('lists only folders the user owns that have an encrypted name, mapped to camelCase', async () => {
+    const q = query({
+      data: [{ folder_id: 'F1', parent_id: null, name_enc: 'A', wrapped_key: null }, { folder_id: 'F2', parent_id: 'F1', name_enc: 'B', wrapped_key: 'WK' }],
+      error: null,
+    });
+    fake.from.mockReturnValue(q);
+    expect(await listFolders()).toEqual([
+      { id: 'F1', parentId: null, nameEnc: 'A', wrappedKey: null },
+      { id: 'F2', parentId: 'F1', nameEnc: 'B', wrappedKey: 'WK' },
+    ]);
+    expect(q.eq).toHaveBeenCalledWith('owner_id', ME); // shared folders are excluded
+    expect(q.not).toHaveBeenCalledWith('name_enc', 'is', null);
   });
 });

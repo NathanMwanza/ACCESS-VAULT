@@ -26,6 +26,7 @@ CREATE TABLE public.folders (
   is_shared boolean NOT NULL DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT folders_encrypted_name_only CHECK (name IS NULL AND path IS NULL AND name_enc IS NOT NULL),
   CONSTRAINT folders_pkey PRIMARY KEY (folder_id),
   CONSTRAINT folders_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(user_id),
   CONSTRAINT folders_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.folders(folder_id)

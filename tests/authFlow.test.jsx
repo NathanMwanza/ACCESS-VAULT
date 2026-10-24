@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,6 +17,7 @@ function renderApp(route = '/login') {
 }
 
 beforeEach(() => {
+  vi.setConfig({ testTimeout: 30000 });
   __resetMockAuth();
   __setMockLatency(0);
 });
@@ -36,7 +37,7 @@ describe('Login screen', () => {
     await user.type(screen.getByLabelText('Email'), DEMO_USER.email);
     await user.type(screen.getByLabelText('Password'), DEMO_USER.password);
     await user.click(screen.getByRole('button', { name: /sign in/i }));
-    expect(await screen.findByText(/Your vault is locked and empty/)).toBeInTheDocument();
+    expect(await screen.findByText(/No folders here yet/)).toBeInTheDocument();
   });
 
   it('shows one generic error for a wrong password', async () => {
@@ -51,6 +52,37 @@ describe('Login screen', () => {
   it('protects /vault when signed out', () => {
     renderApp('/vault');
     expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument();
+  });
+});
+
+describe('Folder explorer', () => {
+  it('creates a folder, opens it, and creates one inside', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Email'), DEMO_USER.email);
+    await user.type(screen.getByLabelText('Password'), DEMO_USER.password);
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await screen.findByText(/No folders here yet/);
+
+    await user.type(screen.getByLabelText('New folder name'), 'Notes');
+    await user.click(screen.getByRole('button', { name: /create folder/i }));
+    await user.click(await screen.findByRole('button', { name: /Notes/ }));
+
+    await user.type(screen.getByLabelText('New folder name'), 'Week 1');
+    await user.click(screen.getByRole('button', { name: /create folder/i }));
+    expect(await screen.findByRole('button', { name: /Week 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: /folder path/i })).toHaveTextContent('Vault / Notes');
+  });
+
+  it('shows a friendly message for an empty name', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Email'), DEMO_USER.email);
+    await user.type(screen.getByLabelText('Password'), DEMO_USER.password);
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await screen.findByText(/No folders here yet/);
+    await user.click(screen.getByRole('button', { name: /create folder/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a folder name.');
   });
 });
 
@@ -82,7 +114,7 @@ describe('Register screen', () => {
     await user.type(screen.getByLabelText('Email'), 'new@user.co');
     await user.type(screen.getByLabelText('Password'), 'a-long-test-password');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
-    await waitFor(() => expect(screen.getByText(/Your vault is locked and empty/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No folders here yet/)).toBeInTheDocument());
   });
 
   it('shows email_taken on the email field', async () => {

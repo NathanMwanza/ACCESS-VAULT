@@ -147,6 +147,10 @@ function requireSignedIn() {
 export async function createFolder({ nameEnc, parentId, wrappedKey }) {
   await sleep(latencyMs);
   const ownerId = requireSignedIn();
+  // Same rule as the RLS policy: a folder can only be nested under one of your own.
+  if (parentId && !folders.some((f) => f.folderId === parentId && f.ownerId === ownerId)) {
+    throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 403);
+  }
   const folderId = crypto.randomUUID();
   folders.push({ folderId, ownerId, parentId: parentId ?? null, nameEnc, wrappedKey: wrappedKey ?? null });
   return { folderId };
@@ -174,4 +178,12 @@ export async function getVault() {
     if (g) return { id: f.folderId, nameEnc: f.nameEnc, myGrant: { wrappedKey: g.wrappedKey, ephemeralPublicKey: g.ephemeralPublicKey } };
   }
   return null;
+}
+
+export async function listFolders() {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  return folders
+    .filter((f) => f.ownerId === me)
+    .map((f) => ({ id: f.folderId, parentId: f.parentId, nameEnc: f.nameEnc, wrappedKey: f.wrappedKey }));
 }

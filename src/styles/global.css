@@ -120,3 +120,14 @@ h1, h2 { line-height: 1.2; margin: 0; }
 .logo--lg { --logo-size: 56px; font-size: 1.4rem; }
 .logo--stacked { flex-direction: column; gap: .75rem; }
 
+
+/* ---------- folder explorer ---------- */
+.explorer__title { font-size: 1.4rem; margin: 0 0 .5rem; color: var(--text); }
+.explorer__status, .explorer__empty { color: var(--text-muted); }
+.explorer__crumbs { color: var(--text-muted); font-size: .92rem; margin-bottom: 1rem; }
+.explorer__crumb, .explorer__folder { background: none; border: 0; padding: 0; font: inherit; color: var(--primary, #1D68FF); cursor: pointer; }
+.explorer__crumb:hover, .explorer__folder:hover { text-decoration: underline; }
+.explorer__new { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.explorer__new .field { flex: 1 1 14rem; margin: 0; }
+.explorer__list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.explorer__list li { padding: .6rem .8rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; }

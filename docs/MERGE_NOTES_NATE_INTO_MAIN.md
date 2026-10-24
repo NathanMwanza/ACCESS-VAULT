@@ -24,3 +24,20 @@ Behaviour notes
 - `docs/OPEN_QUESTIONS.md` #5 is settled in code: raw ECDH P-256 (65 bytes), not RSA-OAEP. Update Chapter 4.
 
 Checks: `npm test` (38 tests), `npm run test:flow` (22), `npm run test:crypto`, `npm run build`.
+
+---
+
+# Phase 3a: real encrypted folders (new branch)
+
+- **Removed** the Backend check panel (`BackendCheck.jsx`, `supabaseFoldersApi.js`, its CSS).
+- **`src/services/folderFlow.js`**: `listFolders()` and `createSubfolder(name, parentId)`. A subfolder gets its own random
+  AES key, wrapped under its parent's key (`folders.wrapped_key`); its name is encrypted with its own key
+  (`folders.name_enc`). Holding the vault key opens the whole tree, and the server only ever sees ciphertext.
+- **Backend**: `listFolders()` added to `supabaseVaultApi.js` and the mock (owner's encrypted folders only).
+- **UI**: `src/components/explorer/FolderExplorer.jsx` (breadcrumbs, create, open) replaces the empty placeholder.
+- **Migration 003** (`supabase/migrations/003_folder_integrity.sql`, **applied to the live project**):
+  - check constraint: a folder must have `name_enc` and must not have `name`/`path`;
+  - insert/update policies: `parent_id` must be null or one of your own folders.
+  `policies.sql` and `schema_reference.sql` updated to match.
+- **Tests**: 54 in `npm test` (new: `folderFlow.test.js`, explorer UI flows, `listFolders` mapping).
+- Not done yet: rename/move/delete folders, files, sharing (grants to other users via `get_user_public_key`).

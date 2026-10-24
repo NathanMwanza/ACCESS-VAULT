@@ -30,6 +30,9 @@ let backend = null;
 export function configure(options) {
   if (options.backend) backend = options.backend;
 }
+export function getBackend() {
+  return be();
+}
 function be() {
   if (!backend) throw new Error("authFlow is not configured. Call configure({ backend }) once at app start.");
   return backend;

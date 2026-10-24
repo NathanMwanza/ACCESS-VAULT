@@ -39,6 +39,23 @@ export async function createFolder({ nameEnc, parentId = null, wrappedKey = null
   return { folderId: data.folder_id };
 }
 
+/**
+ * Every encrypted folder the signed-in user OWNS (the vault root and all subfolders), oldest first.
+ * Folders shared with them are not listed here: those arrive through key grants.
+ * Returns [{ id, parentId, nameEnc, wrappedKey }]; the browser decrypts the names.
+ */
+export async function listFolders() {
+  const me = await currentUserId();
+  const { data, error } = await getSupabase()
+    .from('folders')
+    .select('folder_id, parent_id, name_enc, wrapped_key')
+    .eq('owner_id', me)
+    .not('name_enc', 'is', null)
+    .order('created_at', { ascending: true });
+  if (error) throw fail(error);
+  return (data ?? []).map((r) => ({ id: r.folder_id, parentId: r.parent_id, nameEnc: r.name_enc, wrappedKey: r.wrapped_key }));
+}
+
 /** { resourceType: 'FOLDER'|'FILE', resourceId, granteeId, role, wrappedKey, ephemeralPublicKey } -> { grantId } */
 export async function createGrant({ resourceType, resourceId, granteeId, role, wrappedKey, ephemeralPublicKey }) {
   const { data, error } = await getSupabase()
