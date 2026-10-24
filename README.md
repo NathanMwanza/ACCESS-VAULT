@@ -27,7 +27,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=<publishable key>
 ```
 
 and restart `npm run dev`. `src/services/authApi.js` picks mock or Supabase; no page changes. Also run
-`supabase/migrations/002_vault_folders_and_grants.sql` (encrypted folders + key grants) after 001.
+`supabase/migrations/002`, `003` and `004` (encrypted folders, key grants, folder integrity, encrypted files + Storage rules) after 001, in order.
 The tests always use the mock (plus a fake Supabase client for `supabaseAuthApi`).
 
 ## Folder map
@@ -43,7 +43,10 @@ src/
     apiClient.js     ApiError class (the old fetch wrapper is unused now that the backend is Supabase)
     authFlow.js      the zero-trust flow: register/login derive keys in the browser, wrap/unwrap them, create the vault folder
     authApi.js       mock <-> Supabase switch (the `backend` that authFlow.js calls)
-    supabaseVaultApi.js   createFolder / createGrant / getVault (ciphertext only)
+    supabaseVaultApi.js   createFolder / createGrant / getVault / listFolders (ciphertext only)
+    folderFlow.js    encrypted subfolders: keys wrapped under the parent folder's key, names encrypted
+    fileFlow.js      encrypted files: per-file key, 5 MiB chunks (Algorithm 4.2), tamper detection on download
+    supabaseFilesApi.js   file rows + the private 'chunks' Storage bucket (ciphertext only)
     supabaseClient.js     shared Supabase client (memory-only session, lazy)
     supabaseAuthApi.js    register / login / getAuthParams / logout against Supabase
     supabaseFoldersApi.js folder calls for the temporary Backend check panel

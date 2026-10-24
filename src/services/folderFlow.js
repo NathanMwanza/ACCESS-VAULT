@@ -117,3 +117,12 @@ export async function createSubfolder(rawName, parentId) {
   return { id: folderId, parentId, name };
 }
 
+
+/** The decrypted AES key of a folder the user owns (used by fileFlow.js to wrap file keys). Loads the tree if needed. */
+export async function getFolderKey(folderId) {
+  const session = await readySession();
+  if (!session.folderKeys.get(folderId)) await listFolders();
+  const key = session.folderKeys.get(folderId);
+  if (!key) throw new ApiError(ERROR_CODES.INVALID_REQUEST, 'That folder could not be found.', 404);
+  return key;
+}

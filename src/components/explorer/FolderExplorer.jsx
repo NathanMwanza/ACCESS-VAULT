@@ -3,6 +3,21 @@ import Alert from '../Alert.jsx';
 import Button from '../Button.jsx';
 import TextField from '../TextField.jsx';
 import { FOLDER_NAME_MAX, createSubfolder, getVaultFolderId, listFolders } from '../../services/folderFlow.js';
+import { MAX_FILE_BYTES, deleteFile, downloadFile, listFiles, uploadFile } from '../../services/fileFlow.js';
+
+const formatSize = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** Hands a decrypted Blob to the browser as a normal download. */
+function saveBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 /**
  * Folder browser for the encrypted vault. Names are decrypted in the browser by folderFlow.js;
@@ -15,6 +30,9 @@ export default function FolderExplorer() {
   const [name, setName] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [progress, setProgress] = useState(null); // { name, done, total } while uploading
+  const [workingFileId, setWorkingFileId] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -32,6 +50,18 @@ export default function FolderExplorer() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Files of the open folder. Loaded whenever the folder changes.
+  useEffect(() => {
+    if (!currentId || folders === null) return undefined;
+    let cancelled = false;
+    listFiles(currentId)
+      .then((list) => !cancelled && setFiles(list))
+      .catch((err) => !cancelled && setError(err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [currentId, folders]);
 
   const byId = useMemo(() => new Map((folders ?? []).map((f) => [f.id, f])), [folders]);
   const children = useMemo(
@@ -56,6 +86,55 @@ export default function FolderExplorer() {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onPickFiles(event) {
+    const picked = Array.from(event.target.files ?? []);
+    event.target.value = ''; // allow picking the same file again
+    setError(null);
+    for (const file of picked) {
+      if (file.size > MAX_FILE_BYTES) {
+        setError(`${file.name} is larger than ${Math.floor(MAX_FILE_BYTES / 1024 / 1024)} MB.`);
+        continue;
+      }
+      try {
+        setProgress({ name: file.name, done: 0, total: 1 });
+        const saved = await uploadFile(file, currentId, {
+          onProgress: (done, total) => setProgress({ name: file.name, done, total }),
+        });
+        setFiles((cur) => [...cur, { ...saved, createdAt: new Date().toISOString() }]);
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+    setProgress(null);
+  }
+
+  async function onDownload(file) {
+    setWorkingFileId(file.id);
+    setError(null);
+    try {
+      const { name, blob } = await downloadFile(file.id, currentId);
+      saveBlob(name, blob);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWorkingFileId(null);
+    }
+  }
+
+  async function onDelete(file) {
+    if (!window.confirm(`Delete ${file.name}? This cannot be undone.`)) return;
+    setWorkingFileId(file.id);
+    setError(null);
+    try {
+      await deleteFile(file.id);
+      setFiles((cur) => cur.filter((f) => f.id !== file.id));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWorkingFileId(null);
     }
   }
 
@@ -93,15 +172,49 @@ export default function FolderExplorer() {
         <Button type="submit" loading={busy}>Create folder</Button>
       </form>
 
-      {children.length === 0 ? (
+      {children.length === 0 && files.length === 0 ? (
         <p className="explorer__empty">No folders here yet. Names are encrypted before they leave your device.</p>
-      ) : (
+      ) : null}
+
+      {children.length > 0 && (
         <ul className="explorer__list">
           {children.map((f) => (
             <li key={f.id}>
               <button type="button" className="explorer__folder" onClick={() => setCurrentId(f.id)}>
                 <span aria-hidden="true">📁</span> {f.name}
               </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="explorer__upload">
+        <label className="btn btn--primary explorer__pick">
+          <input type="file" multiple hidden onChange={onPickFiles} disabled={progress !== null} aria-label="Upload files" />
+          <span>Upload files</span>
+        </label>
+        {progress && (
+          <span role="status" className="explorer__progress">
+            Encrypting and uploading {progress.name}… {progress.done}/{progress.total}
+          </span>
+        )}
+      </div>
+
+      {files.length > 0 && (
+        <ul className="explorer__list explorer__files" aria-label="Files">
+          {files.map((f) => (
+            <li key={f.id}>
+              <span className="explorer__file">
+                <span aria-hidden="true">🔒</span> {f.name} <small>{formatSize(f.size)}</small>
+              </span>
+              <span className="explorer__actions">
+                <button type="button" className="explorer__folder" disabled={workingFileId === f.id} onClick={() => onDownload(f)}>
+                  Download
+                </button>
+                <button type="button" className="explorer__folder" disabled={workingFileId === f.id} onClick={() => onDelete(f)}>
+                  Delete
+                </button>
+              </span>
             </li>
           ))}
         </ul>

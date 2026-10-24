@@ -41,3 +41,25 @@ Checks: `npm test` (38 tests), `npm run test:flow` (22), `npm run test:crypto`, 
   `policies.sql` and `schema_reference.sql` updated to match.
 - **Tests**: 54 in `npm test` (new: `folderFlow.test.js`, explorer UI flows, `listFolders` mapping).
 - Not done yet: rename/move/delete folders, files, sharing (grants to other users via `get_user_public_key`).
+
+---
+
+# Phase 3b: encrypted files
+
+- **Migration 004** (`supabase/migrations/004_encrypted_files.sql`, **applied to the live project**):
+  - `files.name_enc` added; `files.name`/`type` must stay empty (same zero-trust guard as folders);
+  - `file_chunks`: unique `(file_id, chunk_index)` and a size cap matching the bucket (5,243,904 bytes);
+  - **fixed the Storage policies on the `chunks` bucket.** They called `storage.foldername(f.name)`, and inside that
+    sub-query `name` is `files.name`, not the object path, so even the owner's own upload was denied (tested before and after).
+    They now use `objects.name`. Policies are limited to signed-in users; chunks can only be written while the file is `uploading`.
+- **`fileFlow.js`**: `uploadFile`, `listFiles`, `downloadFile`, `deleteFile`.
+  Per-file random key wrapped under the folder key; name encrypted with the file key; 5 MiB chunks, nonce = baseNonce||index,
+  AAD = fileId||index||isLast; a failed upload is cleaned up; a chunk that fails authentication aborts the download.
+- **`supabaseFilesApi.js`** + mock equivalents. Object path: `files/<fileId>/<chunkIndex>` in the private `chunks` bucket.
+- **UI**: upload, download, delete in `FolderExplorer`.
+- **Tests (76 total)**: round trip across chunks, empty and exact-multiple files, nothing readable reaches the backend,
+  recovery after re-login, and a dishonest server that flips bits, swaps/reorders chunks, substitutes another file's chunk,
+  drops the last chunk, or deletes a chunk, all detected.
+- Not done: sharing (storage read policy is owner-only on purpose until grants exist), file rename/move, resumable uploads
+  (an interrupted upload is cleaned up in the browser; a closed tab can leave an `uploading` row, which a cleanup job could purge),
+  files over 50 MB, and the two function lockdowns from the security check.

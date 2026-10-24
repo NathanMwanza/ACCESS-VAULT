@@ -32,6 +32,8 @@ export const DEMO_USER = {
 
 const users = new Map(); // email -> { userId, displayName, authSecret, kdfSalt, kdfIterations, publicKey, wrappedPrivateKey }
 const folders = []; // { folderId, ownerId, parentId, nameEnc, wrappedKey }
+const files = []; // { fileId, folderId, ownerId, nameEnc, size, chunkCount, wrappedFileKey, baseNonce, status, createdAt }
+const chunkStore = new Map(); // `${fileId}/${index}` -> Uint8Array
 const grants = []; // { grantId, resourceType, resourceId, granteeId, role, wrappedKey, ephemeralPublicKey }
 let currentUserId = null; // like the Supabase client's own session
 let seeded = false;
@@ -55,6 +57,8 @@ export function __resetMockAuth() {
   users.clear();
   folders.length = 0;
   grants.length = 0;
+  files.length = 0;
+  chunkStore.clear();
   currentUserId = null;
   seeded = false;
   seeding = null;
@@ -187,3 +191,77 @@ export async function listFolders() {
     .filter((f) => f.ownerId === me)
     .map((f) => ({ id: f.folderId, parentId: f.parentId, nameEnc: f.nameEnc, wrappedKey: f.wrappedKey }));
 }
+
+// ---------- file calls (mirror supabaseFilesApi.js) ----------
+
+const MAX_FILE_BYTES = 50 * 1024 * 1024; // files.size check in the database
+const MAX_CHUNK_BYTES = 5243904; // storage bucket limit
+
+const publicFile = (f) => ({
+  id: f.fileId, folderId: f.folderId, nameEnc: f.nameEnc, size: f.size, chunkCount: f.chunkCount,
+  wrappedFileKey: f.wrappedFileKey, baseNonce: f.baseNonce, createdAt: f.createdAt,
+});
+
+function ownFile(fileId, { requireUploading = false } = {}) {
+  const me = requireSignedIn();
+  const f = files.find((x) => x.fileId === fileId && x.ownerId === me);
+  if (!f || (requireUploading && f.status !== 'uploading')) {
+    throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 403);
+  }
+  return f;
+}
+
+export async function createFile({ fileId, folderId, nameEnc, size, chunkCount, wrappedFileKey, baseNonce }) {
+  await sleep(latencyMs);
+  const ownerId = requireSignedIn();
+  if (!folders.some((f) => f.folderId === folderId && f.ownerId === ownerId) || size < 0 || size > MAX_FILE_BYTES || !nameEnc) {
+    throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 403);
+  }
+  files.push({ fileId, folderId, ownerId, nameEnc, size, chunkCount, wrappedFileKey, baseNonce, status: 'uploading', createdAt: new Date().toISOString() });
+  return { fileId };
+}
+
+export async function uploadChunk({ fileId, index, bytes }) {
+  await sleep(latencyMs);
+  ownFile(fileId, { requireUploading: true }); // same rule as the Storage policy
+  if (bytes.byteLength > MAX_CHUNK_BYTES || chunkStore.has(`${fileId}/${index}`)) {
+    throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 409);
+  }
+  chunkStore.set(`${fileId}/${index}`, new Uint8Array(bytes));
+}
+
+export async function completeFile(fileId) {
+  await sleep(latencyMs);
+  ownFile(fileId).status = 'complete';
+}
+
+export async function listFiles(folderId) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  return files.filter((f) => f.folderId === folderId && f.ownerId === me && f.status === 'complete').map(publicFile);
+}
+
+export async function getFile(fileId) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  const f = files.find((x) => x.fileId === fileId && x.ownerId === me && x.status === 'complete');
+  return f ? publicFile(f) : null;
+}
+
+export async function downloadChunk({ fileId, index }) {
+  await sleep(latencyMs);
+  ownFile(fileId);
+  const bytes = chunkStore.get(`${fileId}/${index}`);
+  if (!bytes) throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 404);
+  return new Uint8Array(bytes);
+}
+
+export async function deleteFile(fileId) {
+  await sleep(latencyMs);
+  const f = ownFile(fileId);
+  for (const key of [...chunkStore.keys()]) if (key.startsWith(`${fileId}/`)) chunkStore.delete(key);
+  files.splice(files.indexOf(f), 1);
+}
+
+/** For tests: lets a test corrupt, swap or drop stored chunks like a dishonest server could. */
+export const __chunkStore = chunkStore;

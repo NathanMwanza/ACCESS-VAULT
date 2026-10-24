@@ -74,6 +74,32 @@ describe('Folder explorer', () => {
     expect(screen.getByRole('navigation', { name: /folder path/i })).toHaveTextContent('Vault / Notes');
   });
 
+  it('uploads an encrypted file, lists it, and downloads it back', async () => {
+    const user = userEvent.setup();
+    const saved = [];
+    URL.createObjectURL = vi.fn((blob) => { saved.push(blob); return 'blob:test'; });
+    URL.revokeObjectURL = vi.fn();
+    HTMLAnchorElement.prototype.click = vi.fn();
+
+    renderApp();
+    await user.type(screen.getByLabelText('Email'), DEMO_USER.email);
+    await user.type(screen.getByLabelText('Password'), DEMO_USER.password);
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await screen.findByText(/No folders here yet/);
+
+    await user.upload(screen.getByLabelText('Upload files'), new File(['hello vault'], 'hello.txt', { type: 'text/plain' }));
+    const files = await screen.findByRole('list', { name: 'Files' });
+    expect(files).toHaveTextContent('hello.txt');
+
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0].size).toBe('hello vault'.length);
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Files' })).not.toBeInTheDocument());
+  });
+
   it('shows a friendly message for an empty name', async () => {
     const user = userEvent.setup();
     renderApp();

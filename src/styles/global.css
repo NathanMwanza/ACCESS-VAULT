@@ -131,3 +131,11 @@ h1, h2 { line-height: 1.2; margin: 0; }
 .explorer__new .field { flex: 1 1 14rem; margin: 0; }
 .explorer__list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
 .explorer__list li { padding: .6rem .8rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; }
+
+.explorer__upload { display: flex; align-items: center; gap: 1rem; margin: 1.25rem 0; flex-wrap: wrap; }
+.explorer__pick { cursor: pointer; }
+.explorer__progress { color: var(--text-muted); font-size: .9rem; }
+.explorer__files li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.explorer__file small { color: var(--text-muted); margin-left: .5rem; }
+.explorer__actions { display: flex; gap: 1rem; }
+.explorer__folder:disabled { opacity: .5; cursor: default; }
