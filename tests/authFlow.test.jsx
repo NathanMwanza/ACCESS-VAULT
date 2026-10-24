@@ -66,11 +66,11 @@ describe('Folder explorer', () => {
 
     await user.type(screen.getByLabelText('New folder name'), 'Notes');
     await user.click(screen.getByRole('button', { name: /create folder/i }));
-    await user.click(await screen.findByRole('button', { name: /Notes/ }));
+    await user.click(await screen.findByRole('button', { name: 'Notes' }));
 
     await user.type(screen.getByLabelText('New folder name'), 'Week 1');
     await user.click(screen.getByRole('button', { name: /create folder/i }));
-    expect(await screen.findByRole('button', { name: /Week 1/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Week 1' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: /folder path/i })).toHaveTextContent('Vault / Notes');
   });
 
@@ -98,6 +98,37 @@ describe('Folder explorer', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Files' })).not.toBeInTheDocument());
+  });
+
+  it('shares a folder from the UI with a fingerprint check, then revokes it', async () => {
+    const user = userEvent.setup();
+    // A second account to share with (made through the same flow the app uses).
+    const authFlow = await import('../src/services/authFlow.js');
+    await authFlow.register('bob@test.co', 'Bob', 'bob-long-password-1');
+    await authFlow.logout();
+
+    renderApp();
+    await user.type(screen.getByLabelText('Email'), DEMO_USER.email);
+    await user.type(screen.getByLabelText('Password'), DEMO_USER.password);
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await screen.findByText(/No folders here yet/);
+    await user.type(screen.getByLabelText('New folder name'), 'Reports');
+    await user.click(screen.getByRole('button', { name: /create folder/i }));
+
+    await user.click(await screen.findByRole('button', { name: 'Share Reports' }));
+    await user.type(screen.getByLabelText('Their email'), 'bob@test.co');
+    await user.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByLabelText('Key fingerprint')).toHaveTextContent(/^([0-9A-F]{4} ){7}[0-9A-F]{4}$/);
+
+    await user.selectOptions(screen.getByLabelText('Access ends'), '7');
+    await user.click(screen.getByRole('button', { name: 'Share read-only' }));
+    const list = await screen.findByRole('list', { name: 'Shared with' });
+    expect(list).toHaveTextContent('Bob');
+    expect(list).toHaveTextContent('until');
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Revoke' }));
+    expect(await screen.findByText('Nobody yet.')).toBeInTheDocument();
   });
 
   it('shows a friendly message for an empty name', async () => {

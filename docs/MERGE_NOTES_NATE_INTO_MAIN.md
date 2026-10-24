@@ -63,3 +63,28 @@ Checks: `npm test` (38 tests), `npm run test:flow` (22), `npm run test:crypto`, 
 - Not done: sharing (storage read policy is owner-only on purpose until grants exist), file rename/move, resumable uploads
   (an interrupted upload is cleaned up in the browser; a closed tab can leave an `uploading` row, which a cleanup job could purge),
   files over 50 MB, and the two function lockdowns from the security check.
+
+---
+
+# Phase 3c: sharing folders (read-only) and revoking
+
+Sharing was built twice by accident (two sessions). This is the merged result: the earlier build as the base,
+plus expiry and the completed-file rule from the second.
+
+- **Migration 005** (`supabase/migrations/005_sharing.sql`, **run it in the Supabase SQL editor**; it was not applied automatically):
+  - a share on a folder covers every subfolder and file under it (`has_folder_access`, walks up the parents, depth-limited);
+  - non-owners can read a file only when its upload is `complete`; chunk reads follow file visibility;
+  - **clients can no longer insert, update or delete `public.shares` directly.** The old UPDATE rule let a share's owner
+    re-point it at another person's folder. Shares are now written only by `share_resource` / `revoke_share`;
+  - `share_resource` saves the share and the recipient's key grant in one transaction, takes an optional expiry,
+    refuses the vault root, yourself, duplicates and folders you do not own;
+  - `revoke_share` sets `revoked_at` and deletes the recipient's key grant;
+  - one active share per (folder, person); the duplicate `key_envelopes_unique_grant` index is dropped;
+  - advisor fixes: `handle_new_user` is no longer callable through the API; `get_user_public_key` needs sign-in.
+- **App**: `shareFlow.js` (lookup + key fingerprint, share with optional expiry, list, revoke, open shared tree),
+  `supabaseSharingApi.js` (rebuilt to match the migration), `SharePanel.jsx` (find, check fingerprint, choose expiry, revoke),
+  `SharedWithMe.jsx`. The recipient unwraps the folder key with their private key; subfolder and file keys then unwrap in the usual chain.
+- **Revoking** cuts server access at once and deletes the key grant. Someone who already downloaded and decrypted a file keeps that copy,
+  and the folder key is not rotated. Re-keying a folder (new key, re-wrap subfolders, re-encrypt files) is not built. Say so in Chapter 4.
+- **Trust**: the server supplies the recipient's public key, so the UI shows its fingerprint to compare out of band.
+- **Tests**: 100 in `npm test` (sharing round trips, third-party access, revoke, re-share, expiry, unfinished uploads, Supabase API mapping, UI flow).

@@ -139,3 +139,16 @@ h1, h2 { line-height: 1.2; margin: 0; }
 .explorer__file small { color: var(--text-muted); margin-left: .5rem; }
 .explorer__actions { display: flex; gap: 1rem; }
 .explorer__folder:disabled { opacity: .5; cursor: default; }
+
+/* ---------- sharing ---------- */
+.vault__tabs { display: flex; gap: .25rem; margin: 0 0 1.25rem; border-bottom: 1px solid var(--border); }
+.vault__tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: .6rem .9rem; font: inherit; color: var(--text-muted); cursor: pointer; }
+.vault__tab[aria-selected='true'] { color: var(--text); border-bottom-color: var(--primary, #1D68FF); }
+.explorer__list li small, .share small { color: var(--text-muted); margin-left: .5rem; }
+.explorer__list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.share { margin: 1rem 0; padding: 1.1rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); }
+.share__head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.share__head h2 { font-size: 1.05rem; margin: 0; color: var(--text); }
+.share__hint { color: var(--text-muted); font-size: .9rem; }
+.share__sub { font-size: .95rem; margin: 1rem 0 .5rem; color: var(--text); }
+.share code { overflow-wrap: anywhere; letter-spacing: .04em; }

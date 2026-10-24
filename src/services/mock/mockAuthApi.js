@@ -34,6 +34,7 @@ const users = new Map(); // email -> { userId, displayName, authSecret, kdfSalt,
 const folders = []; // { folderId, ownerId, parentId, nameEnc, wrappedKey }
 const files = []; // { fileId, folderId, ownerId, nameEnc, size, chunkCount, wrappedFileKey, baseNonce, status, createdAt }
 const chunkStore = new Map(); // `${fileId}/${index}` -> Uint8Array
+const shares = []; // { shareId, resourceId, sharedBy, sharedWith, level, createdAt, expiresAt, revokedAt }
 const grants = []; // { grantId, resourceType, resourceId, granteeId, role, wrappedKey, ephemeralPublicKey }
 let currentUserId = null; // like the Supabase client's own session
 let seeded = false;
@@ -57,6 +58,7 @@ export function __resetMockAuth() {
   users.clear();
   folders.length = 0;
   grants.length = 0;
+  shares.length = 0;
   files.length = 0;
   chunkStore.clear();
   currentUserId = null;
@@ -202,6 +204,33 @@ const publicFile = (f) => ({
   wrappedFileKey: f.wrappedFileKey, baseNonce: f.baseNonce, createdAt: f.createdAt,
 });
 
+const userById = (id) => [...users.values()].find((u) => u.userId === id);
+
+// A share counts while it is not revoked and not expired (mirrors has_folder_access in migration 005).
+const shareIsActive = (sh) => !sh.revokedAt && (!sh.expiresAt || new Date(sh.expiresAt) > new Date());
+
+/** Same rule as has_folder_access() in migration 005: owner, or an active share on this folder or any parent. */
+function canReadFolder(me, folderId) {
+  for (let id = folderId, depth = 0; id && depth < 50; depth++) {
+    const f = folders.find((x) => x.folderId === id);
+    if (!f) return false;
+    if (f.ownerId === me) return true;
+    if (shares.some((sh) => sh.resourceId === id && sh.sharedWith === me && shareIsActive(sh))) return true;
+    id = f.parentId;
+  }
+  return false;
+}
+
+function readableFile(fileId) {
+  const me = requireSignedIn();
+  const f = files.find((x) => x.fileId === fileId);
+  // Same as the Storage policy: the owner always, anyone else only once the upload is complete.
+  if (!f || !canReadFolder(me, f.folderId) || (f.ownerId !== me && f.status !== 'complete')) {
+    throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 403);
+  }
+  return f;
+}
+
 function ownFile(fileId, { requireUploading = false } = {}) {
   const me = requireSignedIn();
   const f = files.find((x) => x.fileId === fileId && x.ownerId === me);
@@ -238,19 +267,20 @@ export async function completeFile(fileId) {
 export async function listFiles(folderId) {
   await sleep(latencyMs);
   const me = requireSignedIn();
-  return files.filter((f) => f.folderId === folderId && f.ownerId === me && f.status === 'complete').map(publicFile);
+  if (!canReadFolder(me, folderId)) return [];
+  return files.filter((f) => f.folderId === folderId && f.status === 'complete').map(publicFile);
 }
 
 export async function getFile(fileId) {
   await sleep(latencyMs);
   const me = requireSignedIn();
-  const f = files.find((x) => x.fileId === fileId && x.ownerId === me && x.status === 'complete');
-  return f ? publicFile(f) : null;
+  const f = files.find((x) => x.fileId === fileId && x.status === 'complete');
+  return f && canReadFolder(me, f.folderId) ? publicFile(f) : null;
 }
 
 export async function downloadChunk({ fileId, index }) {
   await sleep(latencyMs);
-  ownFile(fileId);
+  readableFile(fileId);
   const bytes = chunkStore.get(`${fileId}/${index}`);
   if (!bytes) throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 404);
   return new Uint8Array(bytes);
@@ -265,3 +295,95 @@ export async function deleteFile(fileId) {
 
 /** For tests: lets a test corrupt, swap or drop stored chunks like a dishonest server could. */
 export const __chunkStore = chunkStore;
+
+// ---------- sharing (mirror supabaseSharingApi.js and migration 005) ----------
+
+const refuse = (message, status = 400) => new ApiError(ERROR_CODES.INVALID_REQUEST, message, status);
+
+export async function findShareTarget(email) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  const record = users.get(normalise(email));
+  if (!record || record.userId === me) return null;
+  return { userId: record.userId, publicKey: record.publicKey, name: record.displayName };
+}
+
+export async function shareResource({ resourceType, resourceId, recipientId, level = 'VIEWER', wrappedKey, ephemeralPublicKey, expiresAt = null }) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  if (String(resourceType).toLowerCase() !== 'folder') throw refuse('Only folders can be shared.');
+  if (level !== 'VIEWER') throw refuse('Sharing is read-only.');
+  if (recipientId === me) throw refuse('You cannot share with yourself.');
+  if (!wrappedKey || !ephemeralPublicKey) throw refuse('Missing key.');
+  if (expiresAt && new Date(expiresAt) <= new Date()) throw refuse('The expiry time must be in the future.');
+  if (!userById(recipientId)) throw refuse('No Access Vault account was found for that email.');
+  const folder = folders.find((f) => f.folderId === resourceId && f.ownerId === me);
+  if (!folder) throw refuse('You can only share folders you own.');
+  if (folder.parentId === null) throw refuse('Your whole vault cannot be shared. Share a folder inside it.');
+  if (shares.some((sh) => sh.resourceId === resourceId && sh.sharedWith === recipientId && !sh.revokedAt)) {
+    throw refuse('This folder is already shared with that person.');
+  }
+  const shareId = crypto.randomUUID();
+  shares.push({ shareId, resourceId, sharedBy: me, sharedWith: recipientId, level, createdAt: new Date().toISOString(), expiresAt, revokedAt: null });
+  const stale = grants.findIndex((g) => g.resourceId === resourceId && g.granteeId === recipientId);
+  if (stale >= 0) grants.splice(stale, 1);
+  grants.push({ grantId: crypto.randomUUID(), resourceType: 'FOLDER', resourceId, granteeId: recipientId, role: level, wrappedKey, ephemeralPublicKey });
+  return { shareId };
+}
+
+export async function revokeShare(shareId) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  const sh = shares.find((x) => x.shareId === shareId && x.sharedBy === me && !x.revokedAt);
+  if (!sh) throw refuse('That share no longer exists.');
+  sh.revokedAt = new Date().toISOString();
+  const g = grants.findIndex((x) => x.resourceId === sh.resourceId && x.granteeId === sh.sharedWith);
+  if (g >= 0) grants.splice(g, 1);
+}
+
+export async function listShares(resourceId) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  if (!folders.some((f) => f.folderId === resourceId && f.ownerId === me)) throw refuse('You can only share folders you own.');
+  return shares
+    .filter((sh) => sh.resourceId === resourceId && shareIsActive(sh))
+    .map((sh) => {
+      const u = userById(sh.sharedWith);
+      return { shareId: sh.shareId, recipientId: sh.sharedWith, email: [...users.entries()].find(([, v]) => v === u)?.[0], name: u?.displayName, level: sh.level, createdAt: sh.createdAt, expiresAt: sh.expiresAt };
+    });
+}
+
+export async function listSharedWithMe() {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  const out = [];
+  for (const sh of shares.filter((x) => x.sharedWith === me && shareIsActive(x))) {
+    const folder = folders.find((f) => f.folderId === sh.resourceId);
+    const grant = grants.find((g) => g.resourceId === sh.resourceId && g.granteeId === me);
+    const owner = userById(sh.sharedBy);
+    if (!folder || !grant) continue;
+    out.push({
+      shareId: sh.shareId, folderId: sh.resourceId, level: sh.level, createdAt: sh.createdAt,
+      ownerName: owner?.displayName, ownerEmail: [...users.entries()].find(([, v]) => v === owner)?.[0],
+      nameEnc: folder.nameEnc, wrappedKey: grant.wrappedKey, ephemeralPublicKey: grant.ephemeralPublicKey,
+    });
+  }
+  return out;
+}
+
+export async function listSharedSubtree(rootId) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  const root = folders.find((f) => f.folderId === rootId);
+  if (!root || !canReadFolder(me, rootId)) return [];
+  const rows = [{ id: root.folderId, parentId: null, nameEnc: root.nameEnc, wrappedKey: root.wrappedKey }];
+  const queue = [rootId];
+  while (queue.length) {
+    const parent = queue.shift();
+    for (const f of folders.filter((x) => x.parentId === parent)) {
+      rows.push({ id: f.folderId, parentId: parent, nameEnc: f.nameEnc, wrappedKey: f.wrappedKey });
+      queue.push(f.folderId);
+    }
+  }
+  return rows;
+}

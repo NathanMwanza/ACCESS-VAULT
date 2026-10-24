@@ -77,14 +77,12 @@ export async function completeFile(fileId) {
   if (error) throw fail(error);
 }
 
-/** Complete files in one folder that the user owns. */
+/** Complete files in one folder that the user can read: their own, or in a folder shared with them (Row Level Security decides). */
 export async function listFiles(folderId) {
-  const me = await currentUserId();
   const { data, error } = await getSupabase()
     .from('files')
     .select(FILE_COLUMNS)
     .eq('folder_id', folderId)
-    .eq('owner_id', me)
     .eq('status', 'complete')
     .order('created_at', { ascending: true });
   if (error) throw fail(error);

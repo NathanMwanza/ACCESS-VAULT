@@ -61,11 +61,11 @@ describe('uploadChunk', () => {
 
 describe('listFiles / getFile', () => {
   const row = { file_id: 'F1', folder_id: 'D1', name_enc: 'N', size: 5, chunk_count: 1, wrapped_file_key: 'WK', base_nonce: 'BN', created_at: 't' };
-  it('lists only complete files the user owns, mapped to camelCase', async () => {
+  it('lists complete files in the folder (RLS limits it to own or shared), mapped to camelCase', async () => {
     const q = query({ data: [row], error: null });
     fake.from.mockReturnValue(q);
     expect(await api.listFiles('D1')).toEqual([{ id: 'F1', folderId: 'D1', nameEnc: 'N', size: 5, chunkCount: 1, wrappedFileKey: 'WK', baseNonce: 'BN', createdAt: 't' }]);
-    expect(q.eq).toHaveBeenCalledWith('owner_id', ME);
+    expect(q.eq).toHaveBeenCalledWith('folder_id', 'D1');
     expect(q.eq).toHaveBeenCalledWith('status', 'complete');
   });
   it('returns null for a missing file', async () => {

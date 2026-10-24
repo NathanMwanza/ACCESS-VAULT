@@ -2,22 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Alert from '../Alert.jsx';
 import Button from '../Button.jsx';
 import TextField from '../TextField.jsx';
+import SharePanel from './SharePanel.jsx';
 import { FOLDER_NAME_MAX, createSubfolder, getVaultFolderId, listFolders } from '../../services/folderFlow.js';
+import { formatSize, saveBlob } from '../../utils/format.js';
 import { MAX_FILE_BYTES, deleteFile, downloadFile, listFiles, uploadFile } from '../../services/fileFlow.js';
-
-const formatSize = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-
-/** Hands a decrypted Blob to the browser as a normal download. */
-function saveBlob(name, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
 
 /**
  * Folder browser for the encrypted vault. Names are decrypted in the browser by folderFlow.js;
@@ -33,6 +21,7 @@ export default function FolderExplorer() {
   const [files, setFiles] = useState([]);
   const [progress, setProgress] = useState(null); // { name, done, total } while uploading
   const [workingFileId, setWorkingFileId] = useState(null);
+  const [sharing, setSharing] = useState(null); // the folder whose share panel is open
 
   const load = useCallback(async () => {
     setError(null);
@@ -177,16 +166,21 @@ export default function FolderExplorer() {
       ) : null}
 
       {children.length > 0 && (
-        <ul className="explorer__list">
+        <ul className="explorer__list explorer__files" aria-label="Folders">
           {children.map((f) => (
             <li key={f.id}>
               <button type="button" className="explorer__folder" onClick={() => setCurrentId(f.id)}>
                 <span aria-hidden="true">📁</span> {f.name}
               </button>
+              <button type="button" className="explorer__folder" aria-label={`Share ${f.name}`} onClick={() => setSharing(f)}>
+                Share
+              </button>
             </li>
           ))}
         </ul>
       )}
+
+      {sharing && <SharePanel folder={sharing} onClose={() => setSharing(null)} />}
 
       <div className="explorer__upload">
         <label className="btn btn--primary explorer__pick">

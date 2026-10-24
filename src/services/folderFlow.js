@@ -51,13 +51,15 @@ export async function getVaultFolderId() {
 }
 
 /**
- * Loads every folder the user owns and decrypts the names, walking down from the vault key.
- * Returns [{ id, parentId, name }] for the vault root and all readable subfolders.
- * A folder that cannot be decrypted (wrong key or tampered data) is left out, along with everything under it.
+ * Decrypts a folder tree. `rows` holds the root row plus its descendants ([{ id, parentId, nameEnc, wrappedKey }]).
+ * The root's name is encrypted with the root's own key (`rootKey`); every other folder's key is unwrapped from
+ * its parent's key. Keys are cached on the session. A folder that cannot be decrypted (wrong key or tampered
+ * data) is left out, along with everything under it. Returns [{ id, parentId, name }] with the root's parentId null.
  */
-export async function listFolders() {
-  const session = await readySession();
-  const rows = await getBackend().listFolders();
+export async function decryptTree(session, rows, rootId, rootKey) {
+  if (!session.folderKeys) session.folderKeys = new Map();
+  session.folderKeys.set(rootId, rootKey);
+
   const byParent = new Map();
   for (const row of rows) {
     if (!byParent.has(row.parentId)) byParent.set(row.parentId, []);
@@ -65,13 +67,13 @@ export async function listFolders() {
   }
 
   const out = [];
-  const queue = [session.vaultFolderId];
-  const root = rows.find((r) => r.id === session.vaultFolderId);
+  const root = rows.find((r) => r.id === rootId);
   if (root) {
     const { iv, ciphertext } = unpackBlob(root.nameEnc);
-    out.push({ id: root.id, parentId: null, name: await decryptMetadata(session.vaultFolderKey, iv, ciphertext) });
+    out.push({ id: root.id, parentId: null, name: await decryptMetadata(rootKey, iv, ciphertext) });
   }
 
+  const queue = [rootId];
   while (queue.length) {
     const parentId = queue.shift();
     const parentKey = session.folderKeys.get(parentId);
@@ -90,6 +92,16 @@ export async function listFolders() {
     }
   }
   return out;
+}
+
+/**
+ * Loads every folder the user owns and decrypts the names, walking down from the vault key.
+ * Returns [{ id, parentId, name }] for the vault root and all readable subfolders.
+ */
+export async function listFolders() {
+  const session = await readySession();
+  const rows = await getBackend().listFolders();
+  return decryptTree(session, rows, session.vaultFolderId, session.vaultFolderKey);
 }
 
 /** Creates an encrypted subfolder under `parentId` (the vault id or any folder returned by listFolders). */
