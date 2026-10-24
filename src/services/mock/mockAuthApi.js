@@ -5,11 +5,16 @@
 //
 // State lives in module memory only: refresh the page and registered mock users
 // are gone. A demo user is pre-seeded (see DEMO_USER below).
+//
+// The mock now behaves like the real server: it stores whatever crypto fields the browser
+// sends (real keys from src/crypto) and checks authSecret on login. It also implements the
+// vault calls authFlow.js needs (createFolder, createGrant, getVault) so the whole
+// zero-trust flow runs in mock mode and in tests.
 
 import { ApiError } from '../apiClient.js';
 import { ERROR_CODES, checkLoginRequest, checkRegisterRequest } from '../contract.js';
 import { bytesToBase64 } from '../../utils/base64.js';
-import { deriveMockAuthSecret, randomBase64 } from './mockCrypto.js';
+import { setupAccount } from '../../crypto/keyManager.js';
 
 let latencyMs = 500;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -25,25 +30,34 @@ export const DEMO_USER = {
   displayName: 'Demo User',
 };
 
-const users = new Map(); // email -> { userId, displayName, authSecret, kdfSalt, wrappedPrivateKey }
+const users = new Map(); // email -> { userId, displayName, authSecret, kdfSalt, kdfIterations, publicKey, wrappedPrivateKey }
+const folders = []; // { folderId, ownerId, parentId, nameEnc, wrappedKey }
+const grants = []; // { grantId, resourceType, resourceId, granteeId, role, wrappedKey, ephemeralPublicKey }
+let currentUserId = null; // like the Supabase client's own session
 let seeded = false;
+let seeding = null;
 
 async function seedDemoUser() {
   if (seeded) return;
-  seeded = true;
-  users.set(DEMO_USER.email, {
-    userId: crypto.randomUUID(),
-    displayName: DEMO_USER.displayName,
-    authSecret: await deriveMockAuthSecret(DEMO_USER.password, DEMO_USER.email),
-    kdfSalt: randomBase64(16),
-    wrappedPrivateKey: randomBase64(166),
-  });
+  if (!seeding) {
+    seeding = (async () => {
+      // Real keys, so the demo account works with the real login flow.
+      const { _localOnly, ...account } = await setupAccount(DEMO_USER.password);
+      users.set(DEMO_USER.email, { userId: crypto.randomUUID(), displayName: DEMO_USER.displayName, ...account });
+      seeded = true;
+    })();
+  }
+  await seeding;
 }
 
 /** For tests: wipe state. */
 export function __resetMockAuth() {
   users.clear();
+  folders.length = 0;
+  grants.length = 0;
+  currentUserId = null;
   seeded = false;
+  seeding = null;
 }
 
 function newSessionToken() {
@@ -57,12 +71,14 @@ export async function getAuthParams(email) {
   await seedDemoUser();
   await sleep(latencyMs);
   const record = users.get(normalise(email));
-  // Unknown emails get a fake salt too, like the real endpoint, so existence is not revealed.
-  return { kdfSalt: record?.kdfSalt ?? randomBase64(16), kdfIterations: 600000 };
+  if (record) return { kdfSalt: record.kdfSalt, kdfIterations: record.kdfIterations };
+  // Unknown emails get a stable fake salt too, like the real endpoint, so existence is not revealed.
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`mock-pepper:${normalise(email)}`));
+  return { kdfSalt: bytesToBase64(new Uint8Array(digest).slice(0, 16)), kdfIterations: 600000 };
 }
 
 export async function logout() {
-  /* nothing to end in the mock */
+  currentUserId = null;
 }
 
 export async function register(payload) {
@@ -85,8 +101,11 @@ export async function register(payload) {
     displayName: payload.displayName,
     authSecret: payload.authSecret,
     kdfSalt: payload.kdfSalt,
+    kdfIterations: payload.kdfIterations,
+    publicKey: payload.publicKey,
     wrappedPrivateKey: payload.wrappedPrivateKey,
   });
+  currentUserId = userId;
 
   // Contract: { userId: uuid, sessionToken: string }
   return { userId, sessionToken: newSessionToken() };
@@ -107,6 +126,7 @@ export async function login(payload) {
     throw new ApiError(ERROR_CODES.INVALID_CREDENTIALS, 'Incorrect email or password.', 401);
   }
 
+  currentUserId = record.userId;
   // Contract: { userId, sessionToken, kdfSalt, wrappedPrivateKey }
   return {
     userId: record.userId,
@@ -115,4 +135,43 @@ export async function login(payload) {
     wrappedPrivateKey: record.wrappedPrivateKey,
     displayName: record.displayName,
   };
+}
+
+// ---------- vault calls (mirror supabaseVaultApi.js) ----------
+
+function requireSignedIn() {
+  if (!currentUserId) throw new ApiError(ERROR_CODES.INVALID_CREDENTIALS, 'Please sign in again.', 401);
+  return currentUserId;
+}
+
+export async function createFolder({ nameEnc, parentId, wrappedKey }) {
+  await sleep(latencyMs);
+  const ownerId = requireSignedIn();
+  const folderId = crypto.randomUUID();
+  folders.push({ folderId, ownerId, parentId: parentId ?? null, nameEnc, wrappedKey: wrappedKey ?? null });
+  return { folderId };
+}
+
+export async function createGrant({ resourceType, resourceId, granteeId, role, wrappedKey, ephemeralPublicKey }) {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  const folder = folders.find((f) => f.folderId === resourceId);
+  // Same rule as the RLS policy: only the owner of a resource can hand out keys to it.
+  if (resourceType === 'FOLDER' && (!folder || folder.ownerId !== me)) {
+    throw new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', 403);
+  }
+  const grantId = crypto.randomUUID();
+  grants.push({ grantId, resourceType, resourceId, granteeId, role, wrappedKey, ephemeralPublicKey });
+  return { grantId };
+}
+
+export async function getVault() {
+  await sleep(latencyMs);
+  const me = requireSignedIn();
+  for (const f of folders) {
+    if (f.ownerId !== me || f.parentId !== null) continue;
+    const g = grants.find((x) => x.resourceType === 'FOLDER' && x.resourceId === f.folderId && x.granteeId === me);
+    if (g) return { id: f.folderId, nameEnc: f.nameEnc, myGrant: { wrappedKey: g.wrappedKey, ephemeralPublicKey: g.ephemeralPublicKey } };
+  }
+  return null;
 }

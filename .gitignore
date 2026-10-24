@@ -1,13 +1,8 @@
-<<<<<<< HEAD
 node_modules/
-.env
-.env.local
 dist/
-=======
-node_modules
-dist
 .env
 .env.local
+.env*.local
 *.log
 .DS_Store
->>>>>>> prince-backend
+.idea/

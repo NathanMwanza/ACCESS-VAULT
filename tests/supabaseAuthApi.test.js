@@ -62,7 +62,7 @@ describe('supabaseAuthApi.register', () => {
   it('keeps raw database errors out of the UI message', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     fake.auth.signUp.mockResolvedValue({ data: {}, error: { message: 'Database error saving new user', status: 500 } });
-    await expect(register(PAYLOAD)).rejects.toMatchObject({ code: 'unknown', message: expect.not.stringContaining('Database') });
+    await expect(register(PAYLOAD)).rejects.toMatchObject({ code: 'unknown_error', message: expect.not.stringContaining('Database') });
   });
 });
 
@@ -96,6 +96,6 @@ describe('supabaseAuthApi.getAuthParams', () => {
 
   it('rejects a malformed response', async () => {
     fake.rpc.mockResolvedValue({ data: [], error: null });
-    await expect(getAuthParams('a@b.co')).rejects.toMatchObject({ code: 'unknown' });
+    await expect(getAuthParams('a@b.co')).rejects.toMatchObject({ code: 'unknown_error' });
   });
 });
