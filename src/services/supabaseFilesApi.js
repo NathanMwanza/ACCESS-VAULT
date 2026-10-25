@@ -5,25 +5,39 @@
 // Needs supabase/migrations/004_encrypted_files.sql. RLS and the Storage policies are the real boundary:
 // only the file's owner can write chunks (and only while status = 'uploading') or read them.
 
-import { ApiError } from './apiClient.js';
-import { ERROR_CODES } from './contract.js';
-import { getSupabase } from './supabaseClient.js';
+import { ApiError } from "./apiClient.js";
+import { ERROR_CODES } from "./contract.js";
+import { getSupabase } from "./supabaseClient.js";
 
-const BUCKET = 'chunks';
+const BUCKET = "chunks";
 export const chunkPath = (fileId, index) => `files/${fileId}/${index}`;
 
 function fail(error) {
-  console.error('[supabase]', error);
-  const network = error?.name === 'AuthRetryableFetchError' || /failed to fetch|network/i.test(String(error?.message ?? ''));
+  console.error("[supabase]", error);
+  const network =
+    error?.name === "AuthRetryableFetchError" ||
+    /failed to fetch|network/i.test(String(error?.message ?? ""));
   return network
-    ? new ApiError(ERROR_CODES.NETWORK_ERROR, 'Could not reach the server. Check your connection and try again.')
-    : new ApiError(ERROR_CODES.UNKNOWN, 'Something went wrong. Please try again.', error?.status ?? error?.statusCode ?? 0);
+    ? new ApiError(
+        ERROR_CODES.NETWORK_ERROR,
+        "Could not reach the server. Check your connection and try again.",
+      )
+    : new ApiError(
+        ERROR_CODES.UNKNOWN,
+        "Something went wrong. Please try again.",
+        error?.status ?? error?.statusCode ?? 0,
+      );
 }
 
 async function currentUserId() {
   const { data, error } = await getSupabase().auth.getSession();
   const id = data?.session?.user?.id;
-  if (error || !id) throw new ApiError(ERROR_CODES.INVALID_CREDENTIALS, 'Please sign in again.', 401);
+  if (error || !id)
+    throw new ApiError(
+      ERROR_CODES.INVALID_CREDENTIALS,
+      "Please sign in again.",
+      401,
+    );
   return id;
 }
 
@@ -37,12 +51,21 @@ const toFile = (r) => ({
   baseNonce: r.base_nonce,
   createdAt: r.created_at,
 });
-const FILE_COLUMNS = 'file_id, folder_id, name_enc, size, chunk_count, wrapped_file_key, base_nonce, created_at';
+const FILE_COLUMNS =
+  "file_id, folder_id, name_enc, size, chunk_count, wrapped_file_key, base_nonce, created_at";
 
 /** Starts an upload: saves the file row with status 'uploading'. The browser picks fileId (it is bound into every chunk's AAD). */
-export async function createFile({ fileId, folderId, nameEnc, size, chunkCount, wrappedFileKey, baseNonce }) {
+export async function createFile({
+  fileId,
+  folderId,
+  nameEnc,
+  size,
+  chunkCount,
+  wrappedFileKey,
+  baseNonce,
+}) {
   const ownerId = await currentUserId();
-  const { error } = await getSupabase().from('files').insert({
+  const { error } = await getSupabase().from("files").insert({
     file_id: fileId,
     folder_id: folderId,
     owner_id: ownerId,
@@ -62,29 +85,42 @@ export async function uploadChunk({ fileId, index, bytes, iv, checksum }) {
   const path = chunkPath(fileId, index);
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(path, bytes, { contentType: 'application/octet-stream', upsert: false });
+    .upload(path, bytes, {
+      contentType: "application/octet-stream",
+      upsert: false,
+    });
   if (uploadError) throw fail(uploadError);
 
   const { error } = await supabase
-    .from('file_chunks')
-    .insert({ file_id: fileId, chunk_index: index, iv, storage_ref: path, size: bytes.byteLength, checksum });
+    .from("file_chunks")
+    .insert({
+      file_id: fileId,
+      chunk_index: index,
+      iv,
+      storage_ref: path,
+      size: bytes.byteLength,
+      checksum,
+    });
   if (error) throw fail(error);
 }
 
 /** Marks the upload finished. Only complete files are listed and downloadable. */
 export async function completeFile(fileId) {
-  const { error } = await getSupabase().from('files').update({ status: 'complete' }).eq('file_id', fileId);
+  const { error } = await getSupabase()
+    .from("files")
+    .update({ status: "complete" })
+    .eq("file_id", fileId);
   if (error) throw fail(error);
 }
 
 /** Complete files in one folder that the user can read: their own, or in a folder shared with them (Row Level Security decides). */
 export async function listFiles(folderId) {
   const { data, error } = await getSupabase()
-    .from('files')
+    .from("files")
     .select(FILE_COLUMNS)
-    .eq('folder_id', folderId)
-    .eq('status', 'complete')
-    .order('created_at', { ascending: true });
+    .eq("folder_id", folderId)
+    .eq("status", "complete")
+    .order("created_at", { ascending: true });
   if (error) throw fail(error);
   return (data ?? []).map(toFile);
 }
@@ -92,10 +128,10 @@ export async function listFiles(folderId) {
 /** One complete file row, or null. */
 export async function getFile(fileId) {
   const { data, error } = await getSupabase()
-    .from('files')
+    .from("files")
     .select(FILE_COLUMNS)
-    .eq('file_id', fileId)
-    .eq('status', 'complete')
+    .eq("file_id", fileId)
+    .eq("status", "complete")
     .maybeSingle();
   if (error) throw fail(error);
   return data ? toFile(data) : null;
@@ -103,22 +139,32 @@ export async function getFile(fileId) {
 
 /** The encrypted bytes of one chunk, as a Uint8Array. */
 export async function downloadChunk({ fileId, index }) {
-  const { data, error } = await getSupabase().storage.from(BUCKET).download(chunkPath(fileId, index));
-  if (error || !data) throw fail(error ?? new Error('chunk missing'));
+  const { data, error } = await getSupabase()
+    .storage.from(BUCKET)
+    .download(chunkPath(fileId, index));
+  if (error || !data) throw fail(error ?? new Error("chunk missing"));
   return new Uint8Array(await data.arrayBuffer());
 }
 
 /** Deletes the stored chunks, the chunk rows and the file row. Safe to call on a half-finished upload. */
 export async function deleteFile(fileId) {
   const supabase = getSupabase();
-  const { data: chunks, error: listError } = await supabase.from('file_chunks').select('storage_ref').eq('file_id', fileId);
+  const { data: chunks, error: listError } = await supabase
+    .from("file_chunks")
+    .select("storage_ref")
+    .eq("file_id", fileId);
   if (listError) throw fail(listError);
   if (chunks?.length) {
-    const { error } = await supabase.storage.from(BUCKET).remove(chunks.map((c) => c.storage_ref));
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .remove(chunks.map((c) => c.storage_ref));
     if (error) throw fail(error);
   }
-  const { error: chunkRowsError } = await supabase.from('file_chunks').delete().eq('file_id', fileId);
+  const { error: chunkRowsError } = await supabase
+    .from("file_chunks")
+    .delete()
+    .eq("file_id", fileId);
   if (chunkRowsError) throw fail(chunkRowsError);
-  const { error } = await supabase.from('files').delete().eq('file_id', fileId);
+  const { error } = await supabase.from("files").delete().eq("file_id", fileId);
   if (error) throw fail(error);
 }
