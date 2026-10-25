@@ -120,7 +120,6 @@ h1, h2 { line-height: 1.2; margin: 0; }
 .logo--lg { --logo-size: 56px; font-size: 1.4rem; }
 .logo--stacked { flex-direction: column; gap: .75rem; }
 
-<<<<<<< .merge_file_ZLxaCu
 
 /* ---------- folder explorer ---------- */
 .explorer__title { font-size: 1.4rem; margin: 0 0 .5rem; color: var(--text); }
@@ -153,5 +152,3 @@ h1, h2 { line-height: 1.2; margin: 0; }
 .share__hint { color: var(--text-muted); font-size: .9rem; }
 .share__sub { font-size: .95rem; margin: 1rem 0 .5rem; color: var(--text); }
 .share code { overflow-wrap: anywhere; letter-spacing: .04em; }
-=======
->>>>>>> .merge_file_2IqxPI
