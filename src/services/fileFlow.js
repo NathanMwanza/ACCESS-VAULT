@@ -9,32 +9,61 @@
 //                 so reordering, dropping or truncating chunks makes decryption fail
 // The browser picks the fileId because it is part of every chunk's AAD.
 
-import { getBackend } from './authFlow.js';
-import { getFolderKey } from './folderFlow.js';
-import { ApiError } from './apiClient.js';
-import { ERROR_CODES } from './contract.js';
-import { generateAesKey, encryptChunk, decryptChunk, encryptMetadata, decryptMetadata } from '../crypto/cryptoEngine.js';
-import { wrapKey, unwrapKey } from '../crypto/keyManager.js';
-import { base64ToBuf, bufToBase64, concatBytes, packBlob, unpackBlob, uint32BE } from '../crypto/encoding.js';
+import { getBackend } from "./authFlow.js";
+import { getFolderKey } from "./folderFlow.js";
+import { ApiError } from "./apiClient.js";
+import { ERROR_CODES } from "./contract.js";
+import {
+  generateAesKey,
+  encryptChunk,
+  decryptChunk,
+  encryptMetadata,
+  decryptMetadata,
+} from "../crypto/cryptoEngine.js";
+import { wrapKey, unwrapKey } from "../crypto/keyManager.js";
+import {
+  base64ToBuf,
+  bufToBase64,
+  concatBytes,
+  packBlob,
+  unpackBlob,
+  uint32BE,
+} from "../crypto/encoding.js";
 
 export const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MiB of plaintext (+16-byte tag) fits the bucket's 5,243,904-byte limit
 export const MAX_FILE_BYTES = 50 * 1024 * 1024; // files.size check in the database
 export const FILE_NAME_MAX = 255;
 
-const AES = { name: 'AES-GCM' };
-const USAGES = ['encrypt', 'decrypt'];
+const AES = { name: "AES-GCM" };
+const USAGES = ["encrypt", "decrypt"];
 
 export function cleanFileName(raw) {
-  const name = String(raw ?? '').trim();
-  if (!name) throw new ApiError(ERROR_CODES.INVALID_REQUEST, 'This file has no name.', 400);
-  if (name.length > FILE_NAME_MAX) throw new ApiError(ERROR_CODES.INVALID_REQUEST, `File names can be at most ${FILE_NAME_MAX} characters.`, 400);
-  if (/[\\/]/.test(name)) throw new ApiError(ERROR_CODES.INVALID_REQUEST, 'File names cannot contain / or \\.', 400);
+  const name = String(raw ?? "").trim();
+  if (!name)
+    throw new ApiError(
+      ERROR_CODES.INVALID_REQUEST,
+      "This file has no name.",
+      400,
+    );
+  if (name.length > FILE_NAME_MAX)
+    throw new ApiError(
+      ERROR_CODES.INVALID_REQUEST,
+      `File names can be at most ${FILE_NAME_MAX} characters.`,
+      400,
+    );
+  if (/[\\/]/.test(name))
+    throw new ApiError(
+      ERROR_CODES.INVALID_REQUEST,
+      "File names cannot contain / or \\.",
+      400,
+    );
   return name;
 }
 
 /** Reads a Blob/File slice into bytes (uses arrayBuffer() when the runtime has it, FileReader otherwise). */
 function readBytes(blob) {
-  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer().then((b) => new Uint8Array(b));
+  if (typeof blob.arrayBuffer === "function")
+    return blob.arrayBuffer().then((b) => new Uint8Array(b));
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(new Uint8Array(reader.result));
@@ -43,12 +72,23 @@ function readBytes(blob) {
   });
 }
 
-const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
-const chunkIvB64 = (baseNonce, index) => bufToBase64(concatBytes(baseNonce, uint32BE(index)));
+const hex = (buf) =>
+  Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join(
+    "",
+  );
+const chunkIvB64 = (baseNonce, index) =>
+  bufToBase64(concatBytes(baseNonce, uint32BE(index)));
 
 async function unwrapFileKey(row, folderKey) {
   const wrapped = unpackBlob(row.wrappedFileKey);
-  return unwrapKey(wrapped.ciphertext, wrapped.iv, folderKey, AES, true, USAGES);
+  return unwrapKey(
+    wrapped.ciphertext,
+    wrapped.iv,
+    folderKey,
+    AES,
+    true,
+    USAGES,
+  );
 }
 
 async function readName(row, fileKey) {
@@ -61,11 +101,19 @@ async function readName(row, fileKey) {
  * options.onProgress(done, total) is called after each chunk; options.chunkSize is for tests.
  * Returns { id, folderId, name, size }.
  */
-export async function uploadFile(file, folderId, { onProgress, chunkSize = CHUNK_SIZE } = {}) {
+export async function uploadFile(
+  file,
+  folderId,
+  { onProgress, chunkSize = CHUNK_SIZE } = {},
+) {
   const name = cleanFileName(file?.name);
   const size = file.size;
   if (size > MAX_FILE_BYTES) {
-    throw new ApiError(ERROR_CODES.INVALID_REQUEST, `Files can be at most ${Math.floor(MAX_FILE_BYTES / 1024 / 1024)} MB.`, 400);
+    throw new ApiError(
+      ERROR_CODES.INVALID_REQUEST,
+      `Files can be at most ${Math.floor(MAX_FILE_BYTES / 1024 / 1024)} MB.`,
+      400,
+    );
   }
 
   const backend = getBackend();
@@ -91,15 +139,26 @@ export async function uploadFile(file, folderId, { onProgress, chunkSize = CHUNK
 
   try {
     for (let index = 0; index < chunkCount; index++) {
-      const plaintext = await readBytes(file.slice(index * chunkSize, Math.min(size, (index + 1) * chunkSize)));
+      const plaintext = await readBytes(
+        file.slice(index * chunkSize, Math.min(size, (index + 1) * chunkSize)),
+      );
       const isLast = index === chunkCount - 1;
-      const ciphertext = new Uint8Array(await encryptChunk(fileKey, baseNonce, fileId, index, isLast, plaintext));
+      const ciphertext = new Uint8Array(
+        await encryptChunk(
+          fileKey,
+          baseNonce,
+          fileId,
+          index,
+          isLast,
+          plaintext,
+        ),
+      );
       await backend.uploadChunk({
         fileId,
         index,
         bytes: ciphertext,
         iv: chunkIvB64(baseNonce, index),
-        checksum: hex(await crypto.subtle.digest('SHA-256', ciphertext)),
+        checksum: hex(await crypto.subtle.digest("SHA-256", ciphertext)),
       });
       onProgress?.(index + 1, chunkCount);
     }
@@ -120,9 +179,18 @@ export async function listFiles(folderId) {
   for (const row of rows) {
     try {
       const fileKey = await unwrapFileKey(row, folderKey);
-      out.push({ id: row.id, folderId, name: await readName(row, fileKey), size: row.size, createdAt: row.createdAt });
+      out.push({
+        id: row.id,
+        folderId,
+        name: await readName(row, fileKey),
+        size: row.size,
+        createdAt: row.createdAt,
+      });
     } catch {
-      console.error('[fileFlow] skipped a file that could not be decrypted', row.id);
+      console.error(
+        "[fileFlow] skipped a file that could not be decrypted",
+        row.id,
+      );
     }
   }
   return out;
@@ -135,7 +203,12 @@ export async function listFiles(folderId) {
 export async function downloadFile(fileId, folderId) {
   const backend = getBackend();
   const row = await backend.getFile(fileId);
-  if (!row) throw new ApiError(ERROR_CODES.INVALID_REQUEST, 'That file could not be found.', 404);
+  if (!row)
+    throw new ApiError(
+      ERROR_CODES.INVALID_REQUEST,
+      "That file could not be found.",
+      404,
+    );
 
   const folderKey = await getFolderKey(folderId ?? row.folderId);
   let fileKey;
@@ -144,7 +217,11 @@ export async function downloadFile(fileId, folderId) {
     fileKey = await unwrapFileKey(row, folderKey);
     name = await readName(row, fileKey);
   } catch {
-    throw new ApiError(ERROR_CODES.UNKNOWN, 'This file is corrupted or has been tampered with.', 0);
+    throw new ApiError(
+      ERROR_CODES.UNKNOWN,
+      "This file is corrupted or has been tampered with.",
+      0,
+    );
   }
 
   const baseNonce = new Uint8Array(base64ToBuf(row.baseNonce));
@@ -152,12 +229,27 @@ export async function downloadFile(fileId, folderId) {
   for (let index = 0; index < row.chunkCount; index++) {
     const encrypted = await backend.downloadChunk({ fileId, index });
     try {
-      parts.push(new Uint8Array(await decryptChunk(fileKey, baseNonce, fileId, index, index === row.chunkCount - 1, encrypted)));
+      parts.push(
+        new Uint8Array(
+          await decryptChunk(
+            fileKey,
+            baseNonce,
+            fileId,
+            index,
+            index === row.chunkCount - 1,
+            encrypted,
+          ),
+        ),
+      );
     } catch {
-      throw new ApiError(ERROR_CODES.UNKNOWN, 'This file is corrupted or has been tampered with, so it was not downloaded.', 0);
+      throw new ApiError(
+        ERROR_CODES.UNKNOWN,
+        "This file is corrupted or has been tampered with, so it was not downloaded.",
+        0,
+      );
     }
   }
-  return { name, blob: new Blob(parts, { type: 'application/octet-stream' }) };
+  return { name, blob: new Blob(parts, { type: "application/octet-stream" }) };
 }
 
 export async function deleteFile(fileId) {
