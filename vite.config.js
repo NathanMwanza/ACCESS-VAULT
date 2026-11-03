@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: './ACCESS-VAULT/',
+  base: '/ACCESS-VAULT/',
   server: { port: 5173 },
   test: {
     environment: 'jsdom',
